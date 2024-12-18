@@ -21,7 +21,7 @@ body::before {
     height: 100%;
     background-size: cover;
     filter: blur(70px);
-    z-index: 0;
+    z-index: -999;
 }
 
 .sidebar {
@@ -129,9 +129,10 @@ body::before {
 .main-content {
     margin-left: 380px;
     padding: 40px;
-    background-color: var(--primary-black);
     min-height: 100vh;
     width: 100%;
+    position: relative;
+    z-index: 1;
 }
 
 .header {
@@ -313,7 +314,6 @@ body::before {
     gap: 20px;
     margin-top: 40px;
     align-items: start;
-    /* This ensures top alignment */
 }
 
 .game-card {
@@ -322,7 +322,6 @@ body::before {
     transition: transform 0.3s ease;
     cursor: pointer;
     overflow: hidden;
-    background: var(--primary-black);
     border-radius: 12px;
 }
 
@@ -747,7 +746,7 @@ body::before {
 .cart-dropdown {
     position: absolute;
     top: 110px;
-    right: 0;
+    right: 40px;
     width: 320px;
     background: var(--primary-black);
     border: 1px solid #333;
@@ -823,17 +822,19 @@ body::before {
     transition: all 0.3s;
     font-weight: bold;
     font-size: 14px;
+    text-decoration: none;
+    text-align: center;
 }
 
 .cart-button:hover {
     transform: translateY(-2px);
 }
 
-/* Alert Styles */
 .alert {
     position: fixed;
     top: 20px;
-    right: 20px;
+    left: 50%;
+    transform: translateX(-50%);
     padding: 16px 24px;
     background: var(--primary-black);
     border: 1px solid var(--primary-yellow);
@@ -844,14 +845,17 @@ body::before {
     align-items: center;
     gap: 8px;
     opacity: 0;
-    transform: translateY(-20px);
-    transition: all 0.3s;
     z-index: 1000;
+    transition: all 0.3s;
 }
 
 .alert.show {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(-50%, 0);
+}
+
+.alert:not(.show) {
+    transform: translate(-50%, -20px);
 }
 
 .alert svg {
@@ -945,4 +949,33 @@ body::before {
 .cart-item-actions {
     display: flex;
     align-items: center;
+}
+
+.video-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -2;
+    overflow: hidden;
+}
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: -1;
+}
+
+video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }

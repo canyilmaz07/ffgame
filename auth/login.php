@@ -21,7 +21,6 @@ if (isset($_SESSION['user_id'])) {
     <link rel="stylesheet" href="../sources/css/main.css">
     <style>
         body {
-            background: var(--primary-black);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -29,6 +28,8 @@ if (isset($_SESSION['user_id'])) {
         }
 
         .auth-container {
+            position: relative;
+            z-index: 1;
             width: 100%;
             max-width: 420px;
             padding: 40px;
@@ -132,6 +133,7 @@ if (isset($_SESSION['user_id'])) {
 
         .back-to-home {
             position: fixed;
+            z-index: 1;
             top: 20px;
             left: 20px;
             color: var(--primary-yellow);
@@ -168,10 +170,73 @@ if (isset($_SESSION['user_id'])) {
                 transform: rotate(360deg);
             }
         }
+
+        .video-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            /* 50% transparent black */
+        }
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .verification-container {
+            margin-top: 20px;
+        }
+
+        .verification-inputs {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .verification-input {
+            width: 45px;
+            height: 45px;
+            text-align: center;
+            font-size: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .verification-input:focus {
+            border-color: var(--primary-yellow);
+            outline: none;
+        }
     </style>
 </head>
 
 <body>
+    <div class="video-background">
+        <div class="video-overlay"></div>
+        <video autoplay muted loop>
+            <source src="/sources/video/bg.mp4" type="video/mp4">
+        </video>
+    </div>
+
     <a href="../index.php" class="back-to-home">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -181,7 +246,6 @@ if (isset($_SESSION['user_id'])) {
     </a>
 
     <div class="auth-container">
-        <div class="store-title">FF STORE</div>
         <div id="alert-container"></div>
 
         <form id="login-form">
@@ -201,6 +265,24 @@ if (isset($_SESSION['user_id'])) {
             </button>
         </form>
 
+        <form id="verification-form" style="display: none;">
+            <div class="verification-container">
+                <label class="form-label">Doğrulama Kodu</label>
+                <div class="verification-inputs">
+                    <input type="text" maxlength="1" pattern="[0-9]" inputmode="numeric" class="verification-input">
+                    <input type="text" maxlength="1" pattern="[0-9]" inputmode="numeric" class="verification-input">
+                    <input type="text" maxlength="1" pattern="[0-9]" inputmode="numeric" class="verification-input">
+                    <input type="text" maxlength="1" pattern="[0-9]" inputmode="numeric" class="verification-input">
+                    <input type="text" maxlength="1" pattern="[0-9]" inputmode="numeric" class="verification-input">
+                    <input type="text" maxlength="1" pattern="[0-9]" inputmode="numeric" class="verification-input">
+                </div>
+            </div>
+            <button type="submit" class="submit-btn">
+                <span class="loading-spinner"></span>
+                <span class="btn-text">Doğrula</span>
+            </button>
+        </form>
+
         <a href="register.php" class="auth-link">Hesabın yok mu? Hemen üye ol</a>
     </div>
 
@@ -209,12 +291,26 @@ if (isset($_SESSION['user_id'])) {
         $(document).ready(function () {
             function showAlert(message, type = 'danger') {
                 const alertHtml = `
-                    <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                        ${message}
-                    </div>
-                `;
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+            </div>
+        `;
                 $('#alert-container').html(alertHtml);
             }
+
+            // Doğrulama input'ları için event handler
+            $('.verification-input').on('input', function (e) {
+                const maxLength = 1;
+                if (this.value.length >= maxLength) {
+                    $(this).next('.verification-input').focus();
+                }
+            });
+
+            $('.verification-input').on('keydown', function (e) {
+                if (e.key === 'Backspace' && !this.value) {
+                    $(this).prev('.verification-input').focus();
+                }
+            });
 
             $('#login-form').on('submit', function (e) {
                 e.preventDefault();
@@ -223,10 +319,12 @@ if (isset($_SESSION['user_id'])) {
                 const $spinner = $button.find('.loading-spinner');
                 const $btnText = $button.find('.btn-text');
 
-                // Disable button and show spinner
                 $button.prop('disabled', true);
                 $spinner.show();
                 $btnText.text('Giriş yapılıyor...');
+
+                // Form verilerini konsola yazdıralım (debug için)
+                console.log('Form data:', $(this).serialize());
 
                 $.ajax({
                     url: '../api/login.php',
@@ -234,23 +332,69 @@ if (isset($_SESSION['user_id'])) {
                     data: $(this).serialize(),
                     dataType: 'json',
                     success: function (response) {
-                        if (response.success) {
+                        console.log('Server response:', response); // Debug için yanıtı konsola yazdıralım
+
+                        if (response.success && response.requireVerification) {
+                            $('#login-form').hide();
+                            $('#verification-form').show();
+                            showAlert(response.message, 'success');
+                        } else if (response.success) {
                             showAlert('Giriş başarılı! Yönlendiriliyorsunuz...', 'success');
                             setTimeout(() => {
                                 window.location.href = '../index.php';
                             }, 1500);
                         } else {
+                            showAlert(response.message || 'Bir hata oluştu.');
+                        }
+                    },
+                    error: function (xhr, status, error) {
+                        console.error('Ajax error:', { xhr, status, error }); // Hata detaylarını konsola yazdıralım
+                        showAlert('Bir hata oluştu. Lütfen tekrar deneyin. Detay: ' + error);
+                    },
+                    complete: function () {
+                        $button.prop('disabled', false);
+                        $spinner.hide();
+                        $btnText.text('Giriş Yap');
+                    }
+                });
+            });
+
+            // Verification form submit
+            $('#verification-form').on('submit', function (e) {
+                e.preventDefault();
+
+                const code = Array.from($('.verification-input')).map(input => input.value).join('');
+
+                const $button = $(this).find('button[type="submit"]');
+                const $spinner = $button.find('.loading-spinner');
+                const $btnText = $button.find('.btn-text');
+
+                $button.prop('disabled', true);
+                $spinner.show();
+                $btnText.text('Doğrulanıyor...');
+
+                $.ajax({
+                    url: '../api/login.php',
+                    type: 'POST',
+                    data: { verification_code: code },
+                    dataType: 'json',
+                    success: function (response) {
+                        if (response.success) {
+                            showAlert(response.message, 'success');
+                            setTimeout(() => {
+                                window.location.href = '../index.php';
+                            }, 1500);
+                        } else {
                             showAlert(response.message);
-                            $button.prop('disabled', false);
-                            $spinner.hide();
-                            $btnText.text('Giriş Yap');
                         }
                     },
                     error: function () {
                         showAlert('Bir hata oluştu. Lütfen tekrar deneyin.');
+                    },
+                    complete: function () {
                         $button.prop('disabled', false);
                         $spinner.hide();
-                        $btnText.text('Giriş Yap');
+                        $btnText.text('Doğrula');
                     }
                 });
             });

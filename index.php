@@ -2,10 +2,16 @@
 session_start();
 require_once 'config/database.php';
 
+error_reporting(0);
+ini_set('display_errors', 0);
+
 // Check if user is logged in and session is valid
 if (isset($_SESSION['session_token'])) {
     $session_token = $conn->real_escape_string($_SESSION['session_token']);
-    $query = "SELECT * FROM sessions WHERE session_token = '$session_token' AND expires_at > NOW()";
+    $query = "SELECT s.*, u.full_name 
+              FROM sessions s
+              JOIN users u ON s.user_id = u.id 
+              WHERE s.session_token = '$session_token' AND s.expires_at > NOW()";
     $result = $conn->query($query);
 
     if ($result->num_rows === 0) {
@@ -13,6 +19,10 @@ if (isset($_SESSION['session_token'])) {
         session_destroy();
         header('Location: auth/login.php');
         exit;
+    } else {
+        // User data'sını session'a kaydet
+        $user_data = $result->fetch_assoc();
+        $_SESSION['full_name'] = $user_data['full_name'];
     }
 }
 ?>
@@ -30,6 +40,13 @@ if (isset($_SESSION['session_token'])) {
 </head>
 
 <body>
+    <div class="video-container">
+        <video autoplay muted loop>
+            <source src="/sources/video/bg.mp4" type="video/mp4">
+        </video>
+    </div>
+    <div class="overlay"></div>
+
     <div class="d-flex">
         <div class="sidebar">
             <div class="store-title">FF STORE</div>
@@ -95,7 +112,6 @@ if (isset($_SESSION['session_token'])) {
                     </div>
 
                     <div class="header-actions">
-                        <img src="sources/icons/bulk/heart.svg" alt="Favorites" class="header-icon heart-icon">
                         <img src="sources/icons/bulk/shopping-cart.svg" alt="Cart" class="header-icon cart-icon">
                     </div>
                 </div>
@@ -165,8 +181,7 @@ if (isset($_SESSION['session_token'])) {
                     <div class="section-title">Öne Çıkan Oyunlar</div>
                     <div class="games-grid">
                         <?php while ($product = $featured_products->fetch_assoc()): ?>
-                            <div class="game-card">
-                                <img src="sources/icons/bulk/heart.svg" alt="Favorite" class="favorite-icon">
+                            <div class="game-card" data-product-id="<?php echo htmlspecialchars($product['id']); ?>">
                                 <div class="game-image">
                                     <img src="uploads/products/<?php echo htmlspecialchars($product['image']); ?>"
                                         alt="<?php echo htmlspecialchars($product['name']); ?>">
@@ -189,7 +204,8 @@ if (isset($_SESSION['session_token'])) {
                     <div class="section-title">Kategoriler</div>
                     <div class="categories-grid">
                         <?php while ($category = $categories->fetch_assoc()): ?>
-                            <div class="category-card">
+                            <a href="categories.php?id=<?php echo htmlspecialchars($category['id']); ?>"
+                                class="category-card">
                                 <div class="category-image">
                                     <img src="uploads/categories/<?php echo htmlspecialchars($category['image']); ?>"
                                         alt="<?php echo htmlspecialchars($category['name']); ?>">
@@ -198,7 +214,7 @@ if (isset($_SESSION['session_token'])) {
                                         <div class="category-count"><?php echo $category['game_count']; ?> Oyun</div>
                                     </div>
                                 </div>
-                            </div>
+                            </a>
                         <?php endwhile; ?>
                     </div>
                 </div>
@@ -400,7 +416,7 @@ if (isset($_SESSION['session_token'])) {
             <span>Toplam:</span>
             <span id="cartTotal">₺0.00</span>
         </div>
-        <button class="cart-button" onclick="handleCartButtonClick()">Sepete Git</button>
+        <a href="cart.php" class="cart-button">Sepete Git</a>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
@@ -415,17 +431,36 @@ if (isset($_SESSION['session_token'])) {
             setupCartIcon();
             setupAddToCartButtons();
             setupClickOutside();
+            loadCart();
         });
+
+        // Load cart from server
+        async function loadCart() {
+            try {
+                const response = await fetch('/api/cart_operations.php');
+                const data = await response.json();
+                if (data.success) {
+                    cart = data.cart;
+                    updateCartDropdown();
+                    updateCartButtonStates();
+                }
+            } catch (error) {
+                console.error('Failed to load cart:', error);
+            }
+        }
 
         // Setup cart icon click handler
         function setupCartIcon() {
             const cartIcon = document.querySelector('.cart-icon');
-            const cartDropdown = document.getElementById('cartDropdown');
+            if (!cartIcon) return;
 
             cartIcon.addEventListener('click', (e) => {
                 e.stopPropagation();
                 cartOpen = !cartOpen;
-                cartDropdown.classList.toggle('active', cartOpen);
+                const cartDropdown = document.getElementById('cartDropdown');
+                if (cartDropdown) {
+                    cartDropdown.classList.toggle('active', cartOpen);
+                }
             });
         }
 
@@ -441,7 +476,7 @@ if (isset($_SESSION['session_token'])) {
         function setupClickOutside() {
             document.addEventListener('click', (e) => {
                 const cartDropdown = document.getElementById('cartDropdown');
-                if (cartOpen && !cartDropdown.contains(e.target) && !e.target.classList.contains('cart-icon')) {
+                if (cartOpen && cartDropdown && !cartDropdown.contains(e.target) && !e.target.classList.contains('cart-icon')) {
                     cartOpen = false;
                     cartDropdown.classList.remove('active');
                 }
@@ -449,58 +484,75 @@ if (isset($_SESSION['session_token'])) {
         }
 
         // Handle add to cart button click
-        function handleAddToCart() {
+        async function handleAddToCart(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
             if (this.classList.contains('added')) {
                 return;
             }
 
             const gameCard = this.closest('.game-card');
-            const gameTitle = gameCard.querySelector('.game-title').textContent;
-            const gamePrice = parseFloat(gameCard.querySelector('.game-price').textContent.replace('₺', ''));
-            const gameImage = gameCard.querySelector('.game-image img').src;
+            const imageUrl = new URL(gameCard.querySelector('.game-image img').src);
 
-            // Add to cart
-            addToCart(gameTitle, gamePrice, gameImage);
+            const productData = {
+                product_id: gameCard.dataset.productId,
+                title: gameCard.querySelector('.game-title').textContent,
+                price: parseFloat(gameCard.querySelector('.game-price').textContent.replace('₺', '')),
+                image: imageUrl.pathname,
+            };
 
-            // Update button state
-            this.textContent = 'Sepete Eklendi';
-            this.classList.add('added');
+            try {
+                const response = await fetch('/api/cart_operations.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(productData)
+                });
 
-            // Show alert
-            showAlert();
-        }
+                const data = await response.json();
+                if (data.success) {
+                    cart = data.cart;
+                    updateCartDropdown();
 
-        // Add item to cart
-        function addToCart(title, price, image) {
-            cart.push({
-                id: Date.now(),
-                title,
-                price,
-                image
-            });
-            updateCartDropdown();
+                    this.textContent = 'Sepete Eklendi';
+                    this.classList.add('added');
+
+                    showAlert();
+                }
+            } catch (error) {
+                console.error('Failed to add item to cart:', error);
+            }
         }
 
         // Remove item from cart
-        function removeFromCart(itemId) {
-            // Find the item in cart
-            const itemIndex = cart.findIndex(item => item.id === itemId);
-            if (itemIndex === -1) return;
+        async function removeFromCart(itemId, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
 
-            // Find the corresponding game card and reset its button
-            const itemTitle = cart[itemIndex].title;
-            const gameCards = document.querySelectorAll('.game-card');
-            gameCards.forEach(card => {
-                if (card.querySelector('.game-title').textContent === itemTitle) {
-                    const addButton = card.querySelector('.add-to-cart');
-                    addButton.textContent = 'Sepete Ekle';
-                    addButton.classList.remove('added');
+            try {
+                const response = await fetch('/api/cart_operations.php', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        item_id: itemId
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    cart = data.cart;
+                    updateCartDropdown();
+                    updateCartButtonStates();
                 }
-            });
-
-            // Remove item from cart
-            cart.splice(itemIndex, 1);
-            updateCartDropdown();
+            } catch (error) {
+                console.error('Failed to remove item from cart:', error);
+            }
         }
 
         // Update cart dropdown content
@@ -508,7 +560,9 @@ if (isset($_SESSION['session_token'])) {
             const cartItems = document.getElementById('cartItems');
             const cartTotal = document.getElementById('cartTotal');
 
-            if (cart.length === 0) {
+            if (!cartItems || !cartTotal) return;
+
+            if (!cart || cart.length === 0) {
                 cartItems.innerHTML = '<div class="empty-cart">Sepetiniz boş</div>';
                 cartTotal.textContent = '₺0.00';
                 return;
@@ -519,9 +573,9 @@ if (isset($_SESSION['session_token'])) {
             <img src="${item.image}" alt="${item.title}">
             <div class="cart-item-info">
                 <div class="cart-item-title">${item.title}</div>
-                <div class="cart-item-price">₺${item.price.toFixed(2)}</div>
+                <div class="cart-item-price">₺${parseFloat(item.price).toFixed(2)}</div>
             </div>
-            <button class="remove-from-cart" onclick="removeFromCart(${item.id})" title="Sepetten Kaldır">
+            <button class="remove-from-cart" onclick="removeFromCart('${item.id}', event)" title="Sepetten Kaldır">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
@@ -529,22 +583,42 @@ if (isset($_SESSION['session_token'])) {
         </div>
     `).join('');
 
-            const total = cart.reduce((sum, item) => sum + item.price, 0);
+            const total = cart.reduce((sum, item) => sum + parseFloat(item.price), 0);
             cartTotal.textContent = `₺${total.toFixed(2)}`;
+        }
+
+        // Update all "Add to Cart" button states
+        function updateCartButtonStates() {
+            const gameCards = document.querySelectorAll('.game-card');
+            gameCards.forEach(card => {
+                const productId = card.dataset.productId;
+                const addButton = card.querySelector('.add-to-cart');
+                if (!addButton) return;
+
+                const isInCart = cart.some(item => item.product_id === productId);
+                if (isInCart) {
+                    addButton.textContent = 'Sepete Eklendi';
+                    addButton.classList.add('added');
+                } else {
+                    addButton.textContent = 'Sepete Ekle';
+                    addButton.classList.remove('added');
+                }
+            });
         }
 
         // Show alert when item is added to cart
         function showAlert() {
             const alert = document.getElementById('cartAlert');
+            if (!alert) return;
+
             alert.classList.add('show');
             setTimeout(() => {
                 alert.classList.remove('show');
             }, 3000);
         }
 
-        // Handle cart button click (for future implementation)
         function handleCartButtonClick() {
-            console.log('Navigating to cart page...');
+            window.location.href = 'cart.php';
         }
     </script>
 </body>

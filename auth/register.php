@@ -168,10 +168,46 @@ if (isset($_SESSION['user_id'])) {
                 transform: rotate(360deg);
             }
         }
+
+        .video-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            /* 50% transparent black */
+        }
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
     </style>
 </head>
 
 <body>
+    <div class="video-background">
+        <div class="video-overlay"></div>
+        <video autoplay muted loop>
+            <source src="/sources/video/bg.mp4" type="video/mp4">
+        </video>
+    </div>
+
     <a href="../index.php" class="back-to-home">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -181,7 +217,6 @@ if (isset($_SESSION['user_id'])) {
     </a>
 
     <div class="auth-container">
-        <div class="store-title">FF STORE</div>
         <div id="alert-container"></div>
 
         <form id="register-form">
